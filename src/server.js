@@ -4,6 +4,7 @@ import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime/index.js";
 import { closePool, verifyConnection, warmPool } from "./db/index.js";
 import { migrate } from "./db/migrate.js";
+import { startRideSweeper } from "./jobs/index.js";
 
 const server = createServer(createApp());
 const wss = attachRealtime(server);
@@ -14,6 +15,7 @@ async function start() {
   if (process.env.AUTO_MIGRATE !== "false") await migrate();
   console.log(`[db] warmed ${await warmPool()} pooled connections`);
 
+  startRideSweeper();
   console.log(
     `[cors] allowing ${env.clientOrigins.length ? env.clientOrigins.join(", ") : "any origin"}`,
   );

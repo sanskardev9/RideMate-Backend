@@ -35,6 +35,10 @@ export const env = {
   clientOrigins: list(process.env.CLIENT_ORIGIN),
   // A rider counts as online while their last location update is this recent.
   presenceWindowSeconds: Number(process.env.PRESENCE_WINDOW_SECONDS || 120),
+  // A ride whose riders have all stopped reporting for this long is over:
+  // somebody closed the app without ending it, and without this the group
+  // could never start another ride.
+  rideIdleSeconds: Number(process.env.RIDE_IDLE_SECONDS || 900),
   // Chat history returned by default from GET /groups/:id/messages.
   messagePageSize: Number(process.env.MESSAGE_PAGE_SIZE || 100),
 };

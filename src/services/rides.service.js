@@ -114,6 +114,40 @@ export const listForGroup = (groupId, limit) =>
     [groupId, limit],
   );
 
+/**
+ * Ends rides nobody is on any more. A rider who closes the app never sends
+ * `leave`, so they stay an active participant forever and the group is stuck
+ * with a ride that cannot end. A ride counts as abandoned once no remaining
+ * participant has reported a position within the idle window.
+ */
+export const endStaleRides = (idleSeconds) =>
+  many(
+    `with abandoned as (
+       select r.id, r.group_id
+       from rides r
+       where r.ended_at is null
+         and r.started_at < now() - make_interval(secs => $1)
+         and not exists (
+           select 1
+           from ride_participants p
+           join locations l on l.rider_id = p.rider_id and l.ride_id = r.id
+           where p.ride_id = r.id
+             and p.left_at is null
+             and l.updated_at > now() - make_interval(secs => $1)
+         )
+     ), closed as (
+       update rides set ended_at = now()
+       where id in (select id from abandoned)
+       returning id, group_id
+     ), released as (
+       update ride_participants set left_at = now()
+       where ride_id in (select id from closed) and left_at is null
+       returning ride_id
+     )
+     select id, group_id from closed`,
+    [idleSeconds],
+  );
+
 /** Ends the ride for everyone. Only the starter or the group owner may do it. */
 export async function end(ride, riderId) {
   const group = await one("select owner_id from groups where id = $1", [ride.group_id]);
