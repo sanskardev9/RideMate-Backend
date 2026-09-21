@@ -14,7 +14,7 @@ const participant = [validateIdParam("id"), requireRideMembership("id")];
 rideRoutes.get(
   "/:id",
   participant,
-  asyncHandler(async (req, res) => res.json(await rides.detail(req.ride.id))),
+  asyncHandler(async (req, res) => res.json(await rides.detail(req.ride.id, req.rider.id))),
 );
 
 rideRoutes.get(
@@ -28,7 +28,13 @@ rideRoutes.post(
   participant,
   asyncHandler(async (req, res) => {
     await rides.join(req.ride.id, req.rider.id);
-    res.json(await rides.detail(req.ride.id));
+    broadcastToGroup(req.ride.group_id, {
+      type: "ride_joined",
+      groupId: req.ride.group_id,
+      rideId: req.ride.id,
+      userId: req.rider.id,
+    });
+    res.json(await rides.detail(req.ride.id, req.rider.id));
   }),
 );
 
@@ -44,7 +50,7 @@ rideRoutes.post(
       rideId: ride.id,
       endedAt: ride.ended_at,
     });
-    res.json(await rides.detail(ride.id));
+    res.json(await rides.detail(ride.id, req.rider.id));
   }),
 );
 
@@ -53,9 +59,10 @@ rideRoutes.post(
   "/:id/leave",
   participant,
   asyncHandler(async (req, res) => {
-    await rides.leave(req.ride.id, req.rider.id);
+    const { rideEnded } = await rides.leave(req.ride.id, req.rider.id);
     broadcastToGroup(req.ride.group_id, {
-      type: "ride_left",
+      // The last rider leaving ends the ride for the whole group.
+      type: rideEnded ? "ride_ended" : "ride_left",
       groupId: req.ride.group_id,
       rideId: req.ride.id,
       userId: req.rider.id,

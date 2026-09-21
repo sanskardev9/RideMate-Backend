@@ -64,7 +64,7 @@ export const join = (rideId, riderId) =>
   );
 
 /** Ride detail with stats computed from recorded track points. */
-export async function detail(rideId) {
+export async function detail(rideId, riderId) {
   const ride = await one(
     `select
        ride.id,
@@ -78,11 +78,15 @@ export async function detail(rideId) {
          as duration_seconds,
        round(ride_distance_km(ride.id)::numeric, 2)::float as distance_km,
        (select count(*)::int from ride_participants p
-         where p.ride_id = ride.id and p.left_at is null) as rider_count
+         where p.ride_id = ride.id and p.left_at is null) as rider_count,
+       exists (
+         select 1 from ride_participants p
+         where p.ride_id = ride.id and p.rider_id = $2 and p.left_at is null
+       ) as joined
      from rides ride
      join groups g on g.id = ride.group_id
      where ride.id = $1`,
-    [rideId],
+    [rideId, riderId],
   );
   if (!ride) throw ApiError.notFound("Ride not found");
   return ride;
@@ -134,7 +138,7 @@ export async function end(ride, riderId) {
 
 /** Ends the ride for one rider only; the group keeps riding. */
 export async function leave(rideId, riderId) {
-  await transaction(async (client) => {
+  return transaction(async (client) => {
     await client.query(
       "update ride_participants set left_at = now() where ride_id = $1 and rider_id = $2 and left_at is null",
       [rideId, riderId],
@@ -143,5 +147,18 @@ export async function leave(rideId, riderId) {
       "delete from locations where rider_id = $1 and ride_id = $2",
       [riderId, rideId],
     );
+    // The last rider out ends the ride. Otherwise it would stay open with
+    // nobody on it, and the unique active-ride index would block a new one.
+    const { rows } = await client.query(
+      `update rides set ended_at = now()
+       where id = $1 and ended_at is null
+         and not exists (
+           select 1 from ride_participants p
+           where p.ride_id = $1 and p.left_at is null
+         )
+       returning id`,
+      [rideId],
+    );
+    return { rideEnded: rows.length > 0 };
   });
 }
