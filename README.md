@@ -77,6 +77,12 @@ spaces or mixed case will not break it, and `https://*.vercel.app` style
 wildcards are supported for preview deployments. Leaving it empty allows any
 origin, which suits local development only.
 
+Outside production (`NODE_ENV` not set to `production`), localhost and
+private-network origins such as `http://192.168.1.19:5173` are allowed
+automatically, so `npm run dev` and testing on a phone over the LAN work
+without editing the allow-list each time the router hands out a new IP. That
+shortcut is off in production, where every origin must be listed.
+
 A blocked request is logged as `[cors] blocked "<origin>"` along with what is
 allowed, and `GET /health` reports the active allow-list — so a misconfigured
 deployment can be diagnosed without shell access to the host.

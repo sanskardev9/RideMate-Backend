@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { env, normalizeOrigin } from "./config/env.js";
+import { env, isProduction, normalizeOrigin } from "./config/env.js";
 import { errorHandler, notFound } from "./middleware/errors.js";
 import { authRoutes } from "./routes/auth.routes.js";
 import { groupRoutes } from "./routes/groups.routes.js";
@@ -8,6 +8,14 @@ import { rideRoutes } from "./routes/rides.routes.js";
 import { sosRoutes } from "./routes/sos.routes.js";
 import { verifyConnection } from "./db/index.js";
 import { connectionCount } from "./realtime/hub.js";
+
+/**
+ * localhost and private-network addresses, so `npm run dev` and testing on a
+ * phone over the LAN both work without editing CLIENT_ORIGIN every time the
+ * router hands out a new IP. Development only.
+ */
+const LOCAL_ORIGIN =
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
 
 /** `https://*.vercel.app` style entries, so preview deployments keep working. */
 const matches = (pattern, origin) =>
@@ -22,6 +30,8 @@ export function allowOrigin(origin, callback) {
   if (!env.clientOrigins.length) return callback(null, true);
 
   const candidate = normalizeOrigin(origin);
+  if (!isProduction && LOCAL_ORIGIN.test(candidate)) return callback(null, true);
+
   const allowed = env.clientOrigins.some((entry) => matches(entry, candidate));
   if (!allowed)
     console.warn(
