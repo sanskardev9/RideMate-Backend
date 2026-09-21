@@ -69,6 +69,22 @@ the caller is a member.
 
 Errors are always `{ "detail": "..." }` with a matching status code.
 
+## CORS
+
+`CLIENT_ORIGIN` is a comma-separated allow-list of browser origins. Entries are
+normalised before comparison, so a trailing slash, wrapping quotes, padding
+spaces or mixed case will not break it, and `https://*.vercel.app` style
+wildcards are supported for preview deployments. Leaving it empty allows any
+origin, which suits local development only.
+
+A blocked request is logged as `[cors] blocked "<origin>"` along with what is
+allowed, and `GET /health` reports the active allow-list — so a misconfigured
+deployment can be diagnosed without shell access to the host.
+
+Note that a browser reports a CORS rejection to JavaScript as a generic network
+failure, which the client surfaces as "Cannot reach RideMate". Check `/health`
+and the server logs before assuming the API is down.
+
 ## WebSocket
 
 Connect to `/ws?token=<jwt>`. A bad token is closed with code 1008.

@@ -5,10 +5,22 @@ const missing = required.filter((key) => !process.env[key]);
 if (missing.length)
   throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
 
+/**
+ * Browsers send an Origin with no trailing slash and no quotes. Dashboard
+ * values routinely carry both, which silently blocks every request, so both
+ * sides are normalised to the same shape before they are compared.
+ */
+export const normalizeOrigin = (value) =>
+  String(value)
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+
 const list = (value) =>
   String(value || "")
     .split(",")
-    .map((entry) => entry.trim())
+    .map(normalizeOrigin)
     .filter(Boolean);
 
 export const env = {

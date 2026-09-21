@@ -14,6 +14,9 @@ async function start() {
   if (process.env.AUTO_MIGRATE !== "false") await migrate();
   console.log(`[db] warmed ${await warmPool()} pooled connections`);
 
+  console.log(
+    `[cors] allowing ${env.clientOrigins.length ? env.clientOrigins.join(", ") : "any origin"}`,
+  );
   server.listen(env.port, () =>
     console.log(`RideMate API listening on :${env.port} (${env.nodeEnv})`),
   );
