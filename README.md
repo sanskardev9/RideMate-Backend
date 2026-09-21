@@ -47,6 +47,7 @@ the caller is a member.
 | POST | `/auth/register` | Create a rider, returns a token |
 | POST | `/auth/login` | Exchange credentials for a token |
 | GET | `/auth/me` | The signed-in rider |
+| PATCH | `/auth/me` | Rename yourself; returns a fresh token |
 | GET | `/groups` | Groups the rider belongs to |
 | POST | `/groups` | Create a group (creator joins and owns it) |
 | POST | `/groups/join` | Join using an invite code |
@@ -84,6 +85,14 @@ Sent by the server: `connected`, `groups_ready`, `presence`, `location_update`,
 Every group event is checked against the sender's membership, re-reading the
 database if their cached group list is stale, so joining a group over HTTP
 takes effect without reconnecting.
+
+## Ride participation
+
+Pressing *Start a ride* enrols the rider. Anyone else in the group who is
+sharing a location while that ride runs is enrolled automatically on their
+first update — they are on the ride whether or not they pressed the button.
+*End ride for me* sets `left_at`, and continuing to share a location after that
+does not re-enrol them.
 
 ## Ride stats
 
