@@ -44,6 +44,8 @@ export const listForGroup = (groupId) =>
        (l.updated_at > now() - make_interval(secs => $2)) as online
      from locations l
      join riders r on r.id = l.rider_id
+     -- Positions are only visible while the ride they belong to is running.
+     join rides ride on ride.id = l.ride_id and ride.ended_at is null
      where l.group_id = $1
      order by l.updated_at desc`,
     [groupId, env.presenceWindowSeconds],

@@ -143,6 +143,9 @@ export const endStaleRides = (idleSeconds) =>
        update ride_participants set left_at = now()
        where ride_id in (select id from closed) and left_at is null
        returning ride_id
+     ), erased as (
+       delete from locations where ride_id in (select id from closed)
+       returning rider_id
      )
      select id, group_id from closed`,
     [idleSeconds],
@@ -165,7 +168,8 @@ export async function end(ride, riderId) {
       "update ride_participants set left_at = now() where ride_id = $1 and left_at is null",
       [ride.id],
     );
-    await client.query("update locations set ride_id = null where ride_id = $1", [ride.id]);
+    // Erase the trail of live positions; the ride is over.
+    await client.query("delete from locations where ride_id = $1", [ride.id]);
     return rows[0] ?? ride;
   });
 }

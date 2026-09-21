@@ -41,6 +41,14 @@ async function onLocationUpdate(client, event) {
   // Trust the server's view of the active ride rather than the client's, and
   // count this rider as part of it.
   const rideId = await rides.activeParticipation(event.groupId, client.rider.id);
+
+  // Outside a ride a rider's position is nobody else's business: it is not
+  // stored and not broadcast. The app still shows it to them locally.
+  if (!rideId) {
+    send(client.ws, { type: "location_private", groupId: event.groupId });
+    return;
+  }
+
   const saved = await locations.record({
     riderId: client.rider.id,
     groupId: event.groupId,
