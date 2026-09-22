@@ -55,6 +55,21 @@ export async function activeParticipation(groupId, riderId) {
   return row && row.left_at === null ? String(row.ride_id) : null;
 }
 
+/**
+ * Writes a finished ride's numbers onto the ride row. Called from every path
+ * that closes a ride, so history never depends on the breadcrumb trail
+ * still being there later.
+ */
+const FINALISE_SQL = `
+  update rides set
+    distance_km = round(ride_distance_km(id)::numeric, 2)::float,
+    duration_seconds = extract(epoch from coalesce(ended_at, now()) - started_at)::int,
+    rider_count = (
+      select count(*)::int from ride_participants p where p.ride_id = rides.id
+    )
+  where id = $1
+`;
+
 export const join = (rideId, riderId) =>
   one(
     `insert into ride_participants (ride_id, rider_id) values ($1, $2)
@@ -102,16 +117,40 @@ export const participants = (rideId) =>
     [rideId],
   );
 
-export const listForGroup = (groupId, limit) =>
+/**
+ * A group's rides, newest first. Finished rides read their frozen summary;
+ * the one still running is measured live.
+ */
+export const listForGroup = (groupId, limit, riderId) =>
   many(
     `select
-       id, started_by, started_at, ended_at,
-       round(ride_distance_km(id)::numeric, 2)::float as distance_km
-     from rides
-     where group_id = $1
-     order by started_at desc
+       ride.id,
+       ride.group_id,
+       ride.started_by,
+       starter.name as started_by_name,
+       ride.started_at,
+       ride.ended_at,
+       coalesce(
+         ride.distance_km, round(ride_distance_km(ride.id)::numeric, 2)::float
+       ) as distance_km,
+       coalesce(
+         ride.duration_seconds,
+         extract(epoch from coalesce(ride.ended_at, now()) - ride.started_at)::int
+       ) as duration_seconds,
+       coalesce(
+         ride.rider_count,
+         (select count(*)::int from ride_participants p where p.ride_id = ride.id)
+       ) as rider_count,
+       exists (
+         select 1 from ride_participants p
+         where p.ride_id = ride.id and p.rider_id = $3
+       ) as joined
+     from rides ride
+     left join riders starter on starter.id = ride.started_by
+     where ride.group_id = $1
+     order by ride.started_at desc
      limit $2`,
-    [groupId, limit],
+    [groupId, limit, riderId],
   );
 
 /**
@@ -136,7 +175,14 @@ export const endStaleRides = (idleSeconds) =>
              and l.updated_at > now() - make_interval(secs => $1)
          )
      ), closed as (
-       update rides set ended_at = now()
+       update rides set
+         ended_at = now(),
+         -- Same summary the other two closing paths write.
+         distance_km = round(ride_distance_km(id)::numeric, 2)::float,
+         duration_seconds = extract(epoch from now() - started_at)::int,
+         rider_count = (
+           select count(*)::int from ride_participants p where p.ride_id = rides.id
+         )
        where id in (select id from abandoned)
        returning id, group_id
      ), released as (
@@ -168,6 +214,8 @@ export async function end(ride, riderId) {
       "update ride_participants set left_at = now() where ride_id = $1 and left_at is null",
       [ride.id],
     );
+    // Freeze the summary before the live positions go, so it lands in history.
+    await client.query(FINALISE_SQL, [ride.id]);
     // Erase the trail of live positions; the ride is over.
     await client.query("delete from locations where ride_id = $1", [ride.id]);
     return rows[0] ?? ride;
@@ -197,6 +245,7 @@ export async function leave(rideId, riderId) {
        returning id`,
       [rideId],
     );
+    if (rows.length) await client.query(FINALISE_SQL, [rideId]);
     return { rideEnded: rows.length > 0 };
   });
 }

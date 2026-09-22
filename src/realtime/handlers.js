@@ -117,12 +117,41 @@ async function onSosCancel(client, event) {
   broadcastToGroup(event.groupId, { type: "sos_cancel", ...alert });
 }
 
+/**
+ * Call set-up. The media never touches the server -- these events only carry
+ * who is calling whom, so that the two browsers can find each other.
+ *
+ * `to` present means one rider (a direct call, or a reply inside a group
+ * call); absent means the whole group, which is how a group call is offered
+ * and how joining and leaving one is announced.
+ */
+function relayCallEvent(client, event) {
+  const payload = {
+    type: event.type,
+    callId: requiredString(event.callId, "Call id", { max: 64 }),
+    groupId: event.groupId,
+    kind: event.kind === "direct" ? "direct" : "group",
+    from: client.rider.id,
+    fromName: client.rider.name,
+  };
+
+  if (!event.to) return void broadcastToGroup(event.groupId, payload, client.ws);
+
+  const to = requiredId(event.to, "Recipient id");
+  // A rider with no socket cannot be rung; say so rather than ring forever.
+  if (!sendToRider(to, payload) && event.type === "call_invite")
+    send(client.ws, { type: "call_unreachable", callId: payload.callId, to });
+}
+
 const GROUP_HANDLERS = {
   location_update: onLocationUpdate,
   chat_message: onChatMessage,
   typing: onTyping,
   sos_trigger: onSosTrigger,
   sos_cancel: onSosCancel,
+  call_invite: relayCallEvent,
+  call_join: relayCallEvent,
+  call_leave: relayCallEvent,
 };
 
 export async function handleEvent(client, event) {

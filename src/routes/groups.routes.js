@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { requireAuth, requireGroupMembership } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errors.js";
-import { boundedLimit, validateIdParam } from "../middleware/validate.js";
+import {
+  boundedLimit,
+  requiredLatitude,
+  requiredLongitude,
+  validateIdParam,
+} from "../middleware/validate.js";
 import * as groups from "../services/groups.service.js";
 import * as messages from "../services/messages.service.js";
 import * as locations from "../services/locations.service.js";
@@ -61,6 +66,49 @@ groupRoutes.get(
   asyncHandler(async (req, res) => res.json(await locations.listForGroup(req.groupId))),
 );
 
+/**
+ * REST fallback for `location_update`. A phone that has been put in the
+ * background usually loses its websocket long before it loses data, so the
+ * app keeps posting positions this way while it reconnects.
+ */
+groupRoutes.post(
+  "/:id/locations",
+  member,
+  asyncHandler(async (req, res) => {
+    const latitude = requiredLatitude(req.body?.latitude);
+    const longitude = requiredLongitude(req.body?.longitude);
+    const accuracy = Number.isFinite(Number(req.body?.accuracy))
+      ? Number(req.body.accuracy)
+      : null;
+    // As on the socket: the server decides whether this rider is on a ride,
+    // and off a ride the position is neither stored nor shared.
+    const rideId = await rides.activeParticipation(req.groupId, req.rider.id);
+    if (!rideId) return res.status(202).json({ shared: false });
+
+    const saved = await locations.record({
+      riderId: req.rider.id,
+      groupId: req.groupId,
+      rideId,
+      latitude,
+      longitude,
+      accuracy,
+    });
+    broadcastToGroup(req.groupId, {
+      type: "location_update",
+      groupId: req.groupId,
+      rideId: saved.ride_id,
+      userId: req.rider.id,
+      name: req.rider.name,
+      latitude: saved.latitude,
+      longitude: saved.longitude,
+      accuracy: saved.accuracy,
+      timestamp: saved.updated_at,
+      online: true,
+    });
+    res.json({ shared: true });
+  }),
+);
+
 groupRoutes.get(
   "/:id/messages",
   member,
@@ -86,7 +134,13 @@ groupRoutes.get(
   "/:id/rides",
   member,
   asyncHandler(async (req, res) =>
-    res.json(await rides.listForGroup(req.groupId, boundedLimit(req.query.limit, 20, 100))),
+    res.json(
+      await rides.listForGroup(
+        req.groupId,
+        boundedLimit(req.query.limit, 20, 100),
+        req.rider.id,
+      ),
+    ),
   ),
 );
 
